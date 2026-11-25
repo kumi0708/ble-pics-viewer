@@ -1,4 +1,5 @@
 import { SIGNAL_LABELS, demoPackets, hexDump, processPics } from './pics.mjs';
+import { createType2Packet, encodeSignalByte } from './playground.mjs';
 
 const $ = id => document.getElementById(id);
 const flow = $('flow');
@@ -6,6 +7,17 @@ const flowStatus = $('flow-status');
 const flowTimers = [];
 let cycleTimer = null;
 let selectedType = 2;
+const builderSignals = [
+  { state: 'Green', remaining: 8 },
+  { state: 'Red', remaining: 8 },
+];
+
+const PRESETS = {
+  normal: [{ state: 'Green', remaining: 8 }, { state: 'Red', remaining: 8 }],
+  switching: [{ state: 'BlinkGreen', remaining: 2 }, { state: 'Red', remaining: 2 }],
+  'all-red': [{ state: 'Red', remaining: 4 }, { state: 'Red', remaining: 4 }],
+  blinking: [{ state: 'BlinkGreen', remaining: 3 }, { state: 'Green', remaining: 6 }],
+};
 
 function clearFlow() {
   while (flowTimers.length) clearTimeout(flowTimers.pop());
@@ -106,9 +118,70 @@ document.querySelectorAll('.type-tab').forEach(tab => {
   tab.addEventListener('click', () => renderPacket(tab.dataset.type));
 });
 
+function cloneScenario(scenario) {
+  return scenario.map(signal => ({ ...signal }));
+}
+
+function setBuilderSignals(nextSignals) {
+  builderSignals.splice(0, builderSignals.length, ...cloneScenario(nextSignals));
+  renderBuilder();
+}
+
+function renderBuilder() {
+  const packet = createType2Packet(builderSignals);
+  const info = processPics(packet);
+  info.pedestrian_signals.slice(0, 2).forEach((signal, index) => {
+    const setting = builderSignals[index];
+    const card = document.querySelector(`[data-builder-signal="${index}"]`);
+    card.dataset.state = signal.signal_state;
+    card.querySelector('.builder-state').textContent = SIGNAL_LABELS[signal.signal_state];
+    card.querySelector('.builder-remaining').textContent = `残り値 ${signal.remaining_time}`;
+    const range = document.querySelector(`[data-remaining="${index}"]`);
+    range.value = setting.remaining;
+    $(`signal-${index}-output`).textContent = setting.remaining;
+    $(`signal-${index}-byte`).textContent = `信号${index + 1}: 0x${encodeSignalByte(setting.state, setting.remaining).toString(16).padStart(2, '0').toUpperCase()}`;
+    document.querySelectorAll(`[data-signal="${index}"][data-state]`).forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.state === setting.state));
+    });
+  });
+  $('builder-raw').textContent = hexDump(packet);
+  const preview = $('builder-preview');
+  preview.classList.remove('is-updating');
+  void preview.offsetWidth;
+  preview.classList.add('is-updating');
+}
+
+document.querySelectorAll('[data-signal][data-state]').forEach(button => {
+  button.addEventListener('click', () => {
+    builderSignals[Number(button.dataset.signal)].state = button.dataset.state;
+    renderBuilder();
+  });
+});
+
+document.querySelectorAll('[data-remaining]').forEach(range => {
+  range.addEventListener('input', () => {
+    builderSignals[Number(range.dataset.remaining)].remaining = Number(range.value);
+    renderBuilder();
+  });
+});
+
+document.querySelectorAll('[data-preset]').forEach(button => {
+  button.addEventListener('click', () => setBuilderSignals(PRESETS[button.dataset.preset]));
+});
+
+$('swap-signals').addEventListener('click', () => setBuilderSignals([builderSignals[1], builderSignals[0]]));
+
+$('random-preset').addEventListener('click', () => {
+  const states = ['Red', 'Green', 'BlinkGreen'];
+  setBuilderSignals([0, 1].map(() => ({
+    state: states[Math.floor(Math.random() * states.length)],
+    remaining: Math.floor(Math.random() * 8) + 1,
+  })));
+});
+
 function renderSignals(info, step) {
   info.pedestrian_signals.slice(0, 2).forEach((signal, index) => {
-    const card = document.querySelector(`[data-signal="${index}"]`);
+    const card = document.querySelector(`.demo-signal[data-signal="${index}"]`);
     card.dataset.state = signal.signal_state;
     card.querySelector('.demo-state').textContent = SIGNAL_LABELS[signal.signal_state];
     card.querySelector('.demo-remaining').textContent = `残り値 ${signal.remaining_time < 0 ? '—' : signal.remaining_time}`;
@@ -150,3 +223,4 @@ document.addEventListener('visibilitychange', () => {
 
 renderPacket(2);
 renderSignals(processPics(samplePacket(2)), 0);
+renderBuilder();

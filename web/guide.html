@@ -7,8 +7,8 @@
   <meta name="description" content="高度化PICSの信号情報がBLEアドバタイズで届き、歩行者信号として表示されるまでをアニメーションで解説します。">
   <title>高度化PICSのしくみ · PICS Viewer</title>
   <link rel="stylesheet" href="styles.css?v=20261125-1">
-  <link rel="stylesheet" href="guide.css?v=20261125-1">
-  <script type="module" src="guide.mjs?v=20261125-1"></script>
+  <link rel="stylesheet" href="guide.css?v=20261125-2">
+  <script type="module" src="guide.mjs?v=20261125-2"></script>
 </head>
 <body>
   <div class="shell guide-shell">
@@ -53,6 +53,58 @@
           </article>
         </div>
         <p id="flow-status" class="flow-status" role="status">「通信を再生」で、データが届く順番を確認できます。</p>
+      </section>
+
+      <section class="panel playground" aria-labelledby="playground-title">
+        <div class="section-heading playground-heading">
+          <div><p class="eyebrow">PICS PACKET PLAYGROUND</p><h2 id="playground-title">信号パケットをつくってみる</h2></div>
+          <span class="small-tag">LOCAL SIMULATION</span>
+        </div>
+        <p class="playground-lead">信号の状態と残り値を変えると、Type 2のバイト列と受信画面がその場で変わります。</p>
+        <div class="preset-row" role="group" aria-label="交差点シナリオ">
+          <span>シナリオ</span>
+          <button type="button" data-preset="normal">通常交差</button>
+          <button type="button" data-preset="switching">切替直前</button>
+          <button type="button" data-preset="all-red">全赤</button>
+          <button type="button" data-preset="blinking">青点滅</button>
+          <button type="button" id="random-preset">ランダム</button>
+        </div>
+        <div class="playground-grid">
+          <div class="builder-controls">
+            <fieldset class="signal-builder" data-builder="0">
+              <legend>信号1</legend>
+              <div class="state-picker" role="group" aria-label="信号1の状態">
+                <button type="button" data-signal="0" data-state="Red" aria-pressed="false">赤</button>
+                <button type="button" data-signal="0" data-state="Green" aria-pressed="true">青</button>
+                <button type="button" data-signal="0" data-state="BlinkGreen" aria-pressed="false">青点滅</button>
+              </div>
+              <label class="remaining-control" for="signal-0-remaining"><span>残り値</span><output id="signal-0-output" for="signal-0-remaining">8</output><input id="signal-0-remaining" data-remaining="0" type="range" min="1" max="8" value="8"></label>
+            </fieldset>
+            <fieldset class="signal-builder" data-builder="1">
+              <legend>信号2</legend>
+              <div class="state-picker" role="group" aria-label="信号2の状態">
+                <button type="button" data-signal="1" data-state="Red" aria-pressed="true">赤</button>
+                <button type="button" data-signal="1" data-state="Green" aria-pressed="false">青</button>
+                <button type="button" data-signal="1" data-state="BlinkGreen" aria-pressed="false">青点滅</button>
+              </div>
+              <label class="remaining-control" for="signal-1-remaining"><span>残り値</span><output id="signal-1-output" for="signal-1-remaining">8</output><input id="signal-1-remaining" data-remaining="1" type="range" min="1" max="8" value="8"></label>
+            </fieldset>
+            <button id="swap-signals" class="swap-button" type="button">信号1と2を入れ替える</button>
+          </div>
+
+          <div id="builder-preview" class="builder-preview" aria-live="polite">
+            <div class="preview-header"><span>受信画面</span><strong>交差点 00000001</strong></div>
+            <div class="builder-signals">
+              <article class="builder-signal" data-builder-signal="0"><span class="builder-lamp" aria-hidden="true"></span><div><span>信号1</span><strong class="builder-state">青</strong><small class="builder-remaining">残り値 8</small></div></article>
+              <article class="builder-signal" data-builder-signal="1"><span class="builder-lamp" aria-hidden="true"></span><div><span>信号2</span><strong class="builder-state">赤</strong><small class="builder-remaining">残り値 8</small></div></article>
+            </div>
+            <div class="encoded-output">
+              <span>生成されたType 2パケット</span>
+              <code id="builder-raw">00 00 02 00 00 00 00 00 00 01 73 71 84 84 84 84</code>
+              <div class="byte-formulas"><span id="signal-0-byte">信号1: 0x73</span><span id="signal-1-byte">信号2: 0x71</span></div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="explorer-grid">
