@@ -1,226 +1,302 @@
-import { SIGNAL_LABELS, demoPackets, hexDump, processPics } from './pics.mjs';
-import { createType2Packet, encodeSignalByte } from './playground.mjs';
+import { SIGNAL_LABELS, hexDump, processPics } from './pics.mjs';
+import { createType2Packet } from './playground.mjs';
 
 const $ = id => document.getElementById(id);
-const flow = $('flow');
-const flowStatus = $('flow-status');
-const flowTimers = [];
-let cycleTimer = null;
-let selectedType = 2;
-const builderSignals = [
-  { state: 'Green', remaining: 8 },
-  { state: 'Red', remaining: 8 },
-];
-
-const PRESETS = {
-  normal: [{ state: 'Green', remaining: 8 }, { state: 'Red', remaining: 8 }],
-  switching: [{ state: 'BlinkGreen', remaining: 2 }, { state: 'Red', remaining: 2 }],
-  'all-red': [{ state: 'Red', remaining: 4 }, { state: 'Red', remaining: 4 }],
-  blinking: [{ state: 'BlinkGreen', remaining: 3 }, { state: 'Green', remaining: 6 }],
+const STATE_NAMES = { Red: 'RED', Green: 'GREEN', BlinkGreen: 'BLINK GREEN' };
+const state = {
+  phase: 0,
+  remaining: 8,
+  signals: [{ state: 'Green', remaining: 8 }, { state: 'Red', remaining: 8 }],
+  auto: false,
+  mode: 'AUTO CYCLE',
 };
+let autoTimer = null;
+let xrSupported = false;
+let xrSession = null;
+let xrGl = null;
+let xrSpace = null;
 
-function clearFlow() {
-  while (flowTimers.length) clearTimeout(flowTimers.pop());
-  flow.classList.remove('is-running');
-  flow.querySelectorAll('.flow-step').forEach(step => step.classList.remove('is-active', 'is-complete'));
+function phaseSignals(phase) {
+  const remaining = 8 - (phase % 8);
+  return {
+    remaining,
+    signals: [
+      { state: phase < 8 ? 'Green' : phase < 12 ? 'BlinkGreen' : 'Red', remaining },
+      { state: phase < 12 ? 'Red' : phase < 20 ? 'Green' : 'BlinkGreen', remaining },
+    ],
+  };
 }
 
-$('play-flow').addEventListener('click', () => {
-  clearFlow();
-  void flow.offsetWidth;
-  flow.classList.add('is-running');
-  const messages = ['信号制御機が最新状態を用意', 'BLEアドバタイズとして周囲へ配信', 'ブラウザがメーカーID 0x01CEを受信', 'Typeに応じてバイト列を解析', '信号状態として画面に反映'];
-  flow.querySelectorAll('.flow-step').forEach((step, index) => {
-    flowTimers.push(setTimeout(() => {
-      flow.querySelectorAll('.flow-step').forEach((item, itemIndex) => {
-        item.classList.toggle('is-complete', itemIndex < index);
-        item.classList.toggle('is-active', itemIndex === index);
-      });
-      flowStatus.textContent = messages[index];
-    }, index * 800));
-  });
-  flowTimers.push(setTimeout(() => {
-    flow.querySelectorAll('.flow-step').forEach(step => {
-      step.classList.remove('is-active');
-      step.classList.add('is-complete');
-    });
-    flow.classList.remove('is-running');
-    flowStatus.textContent = '受信から表示まで完了。GATT接続や信号機への送信は行いません。';
-  }, 4100));
-});
-
-function samplePacket(type, step = 0) {
-  const packets = demoPackets(step);
-  if (step > 0) return packets[0];
-  return packets[type];
+function setPhase(value) {
+  state.phase = Number(value);
+  const next = phaseSignals(state.phase);
+  state.remaining = next.remaining;
+  state.signals = next.signals;
+  state.mode = state.auto ? 'AUTO CYCLE' : 'TIMELINE';
+  render();
 }
 
-function packetGroups(bytes, type) {
-  const groups = [
-    ['共通ヘッダー', bytes.subarray(0, 2)],
-    [`Type ${type}`, bytes.subarray(2, 4)],
-    ['予約領域', bytes.subarray(4, 6)],
-    ['交差点ID', bytes.subarray(6, 10)],
-    [type === 0 ? '交差点名' : type === 1 ? '緯度・経度' : '信号データ', bytes.subarray(10)],
-  ];
-  return groups.map(([label, data], index) => {
-    const group = document.createElement('div');
-    group.className = `byte-group${index === 4 ? ' is-payload' : ''}`;
-    const value = document.createElement('strong');
-    value.textContent = hexDump(data) || '—';
-    const name = document.createElement('span');
-    name.textContent = label;
-    group.append(value, name);
-    return group;
+function setManual(signals, mode = 'MANUAL') {
+  stopAuto();
+  state.signals = signals.map(signal => ({ ...signal, remaining: state.remaining }));
+  state.mode = mode;
+  render();
+}
+
+function pulsePacket() {
+  const map = $('intersection');
+  map.classList.remove('is-pulsing');
+  void map.offsetWidth;
+  map.classList.add('is-pulsing');
+}
+
+function renderSignal(parsedSignal, index) {
+  const signal = state.signals[index];
+  const mapSignal = document.querySelector(`[data-map-signal="${index}"]`);
+  mapSignal.dataset.state = signal.state;
+  mapSignal.querySelector('strong').textContent = SIGNAL_LABELS[signal.state];
+  const phoneSignal = document.querySelector(`[data-phone-signal="${index}"]`);
+  phoneSignal.dataset.state = signal.state;
+  phoneSignal.querySelector('strong').textContent = SIGNAL_LABELS[signal.state];
+  $(`readout-s${index + 1}`).textContent = `${STATE_NAMES[signal.state]} · ${parsedSignal.remaining_time}`;
+  document.querySelectorAll(`.walker-${index === 0 ? 'x' : 'y'}`).forEach(walker => {
+    walker.classList.toggle('can-walk', signal.state === 'Green' || signal.state === 'BlinkGreen');
   });
 }
 
-function decodedFields(info) {
-  const fields = [
-    ['メッセージ種別', `Type ${info.message_type}`],
-    ['交差点ID', info.intersection_id],
-  ];
-  if (info.message_type === 0) fields.push(['識別名称', info.identifier]);
-  if (info.message_type === 1) {
-    fields.push(['緯度', info.latitude.toFixed(6)], ['経度', info.longitude.toFixed(6)]);
+function byteLabel(index) {
+  if (index === 2) return ['TYPE', 'type'];
+  if (index >= 6 && index <= 9) return ['ID', 'id'];
+  if (index === 10) return ['S1', 's1'];
+  if (index === 11) return ['S2', 's2'];
+  if (index >= 12) return ['PAD', 'pad'];
+  return ['HDR', 'header'];
+}
+
+function renderBytes(packet) {
+  const bytes = Array.from(packet, (value, index) => {
+    const button = document.createElement('button');
+    const [label, focus] = byteLabel(index);
+    button.type = 'button';
+    button.className = 'byte';
+    button.dataset.focus = focus;
+    button.setAttribute('aria-label', `${label} バイト ${value.toString(16).padStart(2, '0')}`);
+    const hex = document.createElement('strong');
+    hex.textContent = value.toString(16).padStart(2, '0').toUpperCase();
+    const caption = document.createElement('small');
+    caption.textContent = label;
+    button.append(hex, caption);
+    button.addEventListener('click', inspectByte);
+    return button;
+  });
+  $('packet-bytes').replaceChildren(...bytes);
+  $('packet-hex').textContent = hexDump(packet);
+}
+
+function inspectByte(event) {
+  const focus = event.currentTarget.dataset.focus;
+  const messages = {
+    header: '共通ヘッダー。PICSメッセージの基本情報です。',
+    type: '0x02は歩行者信号状態を表すType 2です。',
+    id: '4バイトの交差点ID。このデモでは00000001です。',
+    s1: '信号1の1バイト。上位4bitが残り値、下位4bitが信号状態です。',
+    s2: '信号2の1バイト。操作すると値がその場で変化します。',
+    pad: '未使用の信号枠。0x84は対象なし／残り値不明として扱われます。',
+  };
+  $('packet-explanation').textContent = messages[focus];
+  document.querySelectorAll('.map-signal').forEach(signal => signal.classList.remove('is-inspecting'));
+  if (focus === 's1' || focus === 's2') {
+    const index = focus === 's1' ? 0 : 1;
+    const signal = document.querySelector(`[data-map-signal="${index}"]`);
+    signal.classList.add('is-inspecting');
+    setTimeout(() => signal.classList.remove('is-inspecting'), 900);
   }
-  if (info.message_type === 2) {
-    info.pedestrian_signals.slice(0, 2).forEach((signal, index) => {
-      const remaining = signal.remaining_time < 0 ? '不明' : signal.remaining_time;
-      fields.push([`信号${index + 1}`, `${SIGNAL_LABELS[signal.signal_state]} / 残り値 ${remaining}`]);
-    });
+}
+
+function render() {
+  state.signals.forEach(signal => { signal.remaining = state.remaining; });
+  const packet = createType2Packet(state.signals);
+  const parsed = processPics(packet);
+  parsed.pedestrian_signals.slice(0, 2).forEach(renderSignal);
+  renderBytes(packet);
+  $('phase-number').textContent = String(state.phase).padStart(2, '0');
+  $('phase-control').value = state.phase;
+  $('clock').textContent = `PHASE ${String(state.phase).padStart(2, '0')}`;
+  $('remaining-control').value = state.remaining;
+  $('remaining-output').textContent = state.remaining;
+  $('scene-mode').textContent = state.mode;
+  $('readout-mode').textContent = state.mode.replace(' CYCLE', '');
+  $('phone-received').textContent = `${new Date().toLocaleTimeString('ja-JP', { hour12: false })} · BLE`;
+  renderJudgement();
+  pulsePacket();
+}
+
+function renderJudgement() {
+  const green = state.signals.findIndex(signal => signal.state === 'Green');
+  const blinking = state.signals.findIndex(signal => signal.state === 'BlinkGreen');
+  let condition = 'nominal';
+  let jp = '横断許可';
+  let en = `ROUTE S${green + 1} / WALK`;
+  if (green < 0 && blinking >= 0) {
+    condition = 'warning';
+    jp = '切替注意';
+    en = `ROUTE S${blinking + 1} / BLINKING`;
   }
-  return fields.map(([label, value]) => {
-    const row = document.createElement('div');
-    const dt = document.createElement('dt');
-    const dd = document.createElement('dd');
-    dt.textContent = label;
-    dd.textContent = value;
-    row.append(dt, dd);
-    return row;
-  });
+  if (green < 0 && blinking < 0) {
+    condition = 'halt';
+    jp = '全方向停止';
+    en = 'ALL ROUTES / STOP';
+  }
+  document.body.dataset.condition = condition;
+  $('judgement-jp').textContent = jp;
+  $('judgement-en').textContent = en;
 }
 
-function renderPacket(type) {
-  selectedType = Number(type);
-  const packet = samplePacket(selectedType);
-  const info = processPics(packet);
-  $('byte-groups').replaceChildren(...packetGroups(packet, selectedType));
-  $('decoded').replaceChildren(...decodedFields(info));
-  document.querySelectorAll('.type-tab').forEach(tab => {
-    const active = Number(tab.dataset.type) === selectedType;
-    tab.classList.toggle('is-active', active);
-    tab.setAttribute('aria-selected', String(active));
-  });
-}
-
-document.querySelectorAll('.type-tab').forEach(tab => {
-  tab.addEventListener('click', () => renderPacket(tab.dataset.type));
-});
-
-function cloneScenario(scenario) {
-  return scenario.map(signal => ({ ...signal }));
-}
-
-function setBuilderSignals(nextSignals) {
-  builderSignals.splice(0, builderSignals.length, ...cloneScenario(nextSignals));
-  renderBuilder();
-}
-
-function renderBuilder() {
-  const packet = createType2Packet(builderSignals);
-  const info = processPics(packet);
-  info.pedestrian_signals.slice(0, 2).forEach((signal, index) => {
-    const setting = builderSignals[index];
-    const card = document.querySelector(`[data-builder-signal="${index}"]`);
-    card.dataset.state = signal.signal_state;
-    card.querySelector('.builder-state').textContent = SIGNAL_LABELS[signal.signal_state];
-    card.querySelector('.builder-remaining').textContent = `残り値 ${signal.remaining_time}`;
-    const range = document.querySelector(`[data-remaining="${index}"]`);
-    range.value = setting.remaining;
-    $(`signal-${index}-output`).textContent = setting.remaining;
-    $(`signal-${index}-byte`).textContent = `信号${index + 1}: 0x${encodeSignalByte(setting.state, setting.remaining).toString(16).padStart(2, '0').toUpperCase()}`;
-    document.querySelectorAll(`[data-signal="${index}"][data-state]`).forEach(button => {
-      button.setAttribute('aria-pressed', String(button.dataset.state === setting.state));
-    });
-  });
-  $('builder-raw').textContent = hexDump(packet);
-  const preview = $('builder-preview');
-  preview.classList.remove('is-updating');
-  void preview.offsetWidth;
-  preview.classList.add('is-updating');
-}
-
-document.querySelectorAll('[data-signal][data-state]').forEach(button => {
-  button.addEventListener('click', () => {
-    builderSignals[Number(button.dataset.signal)].state = button.dataset.state;
-    renderBuilder();
-  });
-});
-
-document.querySelectorAll('[data-remaining]').forEach(range => {
-  range.addEventListener('input', () => {
-    builderSignals[Number(range.dataset.remaining)].remaining = Number(range.value);
-    renderBuilder();
-  });
-});
-
-document.querySelectorAll('[data-preset]').forEach(button => {
-  button.addEventListener('click', () => setBuilderSignals(PRESETS[button.dataset.preset]));
-});
-
-$('swap-signals').addEventListener('click', () => setBuilderSignals([builderSignals[1], builderSignals[0]]));
-
-$('random-preset').addEventListener('click', () => {
+function cycleSignal(index) {
   const states = ['Red', 'Green', 'BlinkGreen'];
-  setBuilderSignals([0, 1].map(() => ({
-    state: states[Math.floor(Math.random() * states.length)],
-    remaining: Math.floor(Math.random() * 8) + 1,
-  })));
-});
+  const current = states.indexOf(state.signals[index].state);
+  const next = state.signals.map(signal => ({ ...signal }));
+  next[index].state = states[(current + 1) % states.length];
+  setManual(next);
+}
 
-function renderSignals(info, step) {
-  info.pedestrian_signals.slice(0, 2).forEach((signal, index) => {
-    const card = document.querySelector(`.demo-signal[data-signal="${index}"]`);
-    card.dataset.state = signal.signal_state;
-    card.querySelector('.demo-state').textContent = SIGNAL_LABELS[signal.signal_state];
-    card.querySelector('.demo-remaining').textContent = `残り値 ${signal.remaining_time < 0 ? '—' : signal.remaining_time}`;
+function startAuto() {
+  if (state.auto) return;
+  state.auto = true;
+  $('auto-play').setAttribute('aria-pressed', 'true');
+  $('auto-play').querySelector('strong').textContent = '一時停止';
+  state.mode = 'AUTO CYCLE';
+  render();
+  autoTimer = setInterval(() => setPhase((state.phase + 1) % 24), 780);
+}
+
+function stopAuto() {
+  state.auto = false;
+  clearInterval(autoTimer);
+  autoTimer = null;
+  $('auto-play').setAttribute('aria-pressed', 'false');
+  $('auto-play').querySelector('strong').textContent = '自動再生';
+}
+
+$('auto-play').addEventListener('click', () => state.auto ? stopAuto() : startAuto());
+$('phase-control').addEventListener('input', event => { stopAuto(); setPhase(event.target.value); });
+$('remaining-control').addEventListener('input', event => {
+  stopAuto();
+  state.remaining = Number(event.target.value);
+  state.mode = 'MANUAL';
+  render();
+});
+document.querySelectorAll('[data-map-signal]').forEach(button => {
+  button.addEventListener('click', () => cycleSignal(Number(button.dataset.mapSignal)));
+});
+document.querySelectorAll('[data-scene]').forEach(button => {
+  button.addEventListener('click', () => {
+    const scene = button.dataset.scene;
+    if (scene === 'normal') { stopAuto(); setPhase(0); }
+    if (scene === 'switch') { stopAuto(); setPhase(9); }
+    if (scene === 'all-red') setManual([{ state: 'Red' }, { state: 'Red' }], 'ALL RED');
+    if (scene === 'random') {
+      const states = ['Red', 'Green', 'BlinkGreen'];
+      state.remaining = Math.floor(Math.random() * 8) + 1;
+      setManual([0, 1].map(() => ({ state: states[Math.floor(Math.random() * states.length)] })), 'RANDOM');
+    }
   });
-  const percent = Math.round((step / 23) * 100);
-  $('cycle-progress').style.width = `${percent}%`;
-  document.querySelector('.cycle-track').setAttribute('aria-valuenow', String(step));
-  if (selectedType === 2) {
-    $('byte-groups').replaceChildren(...packetGroups(samplePacket(2, step), 2));
-    $('decoded').replaceChildren(...decodedFields(info));
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopAuto(); });
+
+function showXRNotice(message) {
+  const notice = $('xr-notice');
+  notice.textContent = message;
+  notice.hidden = false;
+  clearTimeout(showXRNotice.timer);
+  showXRNotice.timer = setTimeout(() => { notice.hidden = true; }, 5000);
+}
+
+async function detectXR() {
+  if (!navigator.xr) {
+    $('xr-status').textContent = 'PREVIEW MODE';
+    return;
+  }
+  try {
+    xrSupported = await navigator.xr.isSessionSupported('immersive-ar');
+    $('xr-status').textContent = xrSupported ? 'AR READY' : 'PREVIEW MODE';
+  } catch {
+    $('xr-status').textContent = 'PREVIEW MODE';
   }
 }
 
-function stopCycle() {
-  if (cycleTimer) clearInterval(cycleTimer);
-  cycleTimer = null;
-  $('play-cycle').disabled = false;
+function onXRFrame(time, frame) {
+  if (!xrSession) return;
+  xrSession.requestAnimationFrame(onXRFrame);
+  const pose = frame.getViewerPose(xrSpace);
+  if (!pose) return;
+  xrGl.bindFramebuffer(xrGl.FRAMEBUFFER, xrSession.renderState.baseLayer.framebuffer);
+  xrGl.clearColor(0, 0, 0, 0);
+  xrGl.clear(xrGl.COLOR_BUFFER_BIT | xrGl.DEPTH_BUFFER_BIT);
+  pose.views.forEach(view => {
+    const viewport = xrSession.renderState.baseLayer.getViewport(view);
+    xrGl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+  });
 }
 
-$('play-cycle').addEventListener('click', () => {
-  stopCycle();
-  let step = 0;
-  $('play-cycle').disabled = true;
-  $('cycle-status').textContent = 'Type 2パケットを順に受信しています…';
-  renderSignals(processPics(samplePacket(2, step)), step);
-  cycleTimer = setInterval(() => {
-    step += 1;
-    renderSignals(processPics(samplePacket(2, step)), step);
-    if (step >= 23) {
-      stopCycle();
-      $('cycle-status').textContent = '1サイクルの再生が完了しました。表示は説明用の架空データです。';
-    }
-  }, 300);
+function leaveXR() {
+  xrSession = null;
+  xrGl = null;
+  xrSpace = null;
+  document.body.classList.remove('xr-active');
+  $('xr-toggle').setAttribute('aria-pressed', 'false');
+  $('xr-status').textContent = xrSupported ? 'AR READY' : 'PREVIEW MODE';
+}
+
+async function enterImmersiveAR() {
+  try {
+    const session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['dom-overlay'],
+      optionalFeatures: ['local-floor'],
+      domOverlay: { root: document.body },
+    });
+    const canvas = $('xr-layer');
+    const gl = canvas.getContext('webgl', { alpha: true, xrCompatible: true });
+    await gl.makeXRCompatible();
+    session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+    xrSession = session;
+    xrGl = gl;
+    xrSpace = await session.requestReferenceSpace('local');
+    session.addEventListener('end', leaveXR, { once: true });
+    document.body.classList.add('xr-active');
+    $('xr-toggle').setAttribute('aria-pressed', 'true');
+    $('xr-status').textContent = 'AR ACTIVE';
+    session.requestAnimationFrame(onXRFrame);
+  } catch (error) {
+    showXRNotice(`XR表示を開始できませんでした。全画面プレビューへ切り替えます。(${error.name || 'XR ERROR'})`);
+    await toggleXRPreview();
+  }
+}
+
+async function toggleXRPreview() {
+  const active = document.body.classList.toggle('xr-preview');
+  $('xr-toggle').setAttribute('aria-pressed', String(active));
+  $('xr-status').textContent = active ? 'PREVIEW ACTIVE' : (xrSupported ? 'AR READY' : 'PREVIEW MODE');
+  if (active && document.documentElement.requestFullscreen && !document.fullscreenElement) {
+    try { await document.documentElement.requestFullscreen(); } catch { /* Fullscreen is optional. */ }
+  } else if (!active && document.fullscreenElement) {
+    try { await document.exitFullscreen(); } catch { /* Ignore browser restrictions. */ }
+  }
+}
+
+$('xr-toggle').addEventListener('click', async () => {
+  if (xrSession) { await xrSession.end(); return; }
+  if (document.body.classList.contains('xr-preview')) { await toggleXRPreview(); return; }
+  if (xrSupported) await enterImmersiveAR();
+  else await toggleXRPreview();
+});
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && document.body.classList.contains('xr-preview')) {
+    document.body.classList.remove('xr-preview');
+    $('xr-toggle').setAttribute('aria-pressed', 'false');
+    $('xr-status').textContent = xrSupported ? 'AR READY' : 'PREVIEW MODE';
+  }
 });
 
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) stopCycle();
-});
-
-renderPacket(2);
-renderSignals(processPics(samplePacket(2)), 0);
-renderBuilder();
+render();
+detectXR();
