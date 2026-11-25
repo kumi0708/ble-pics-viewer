@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f6f4">
+  <meta name="description" content="高度化PICSの信号情報がBLEアドバタイズで届き、歩行者信号として表示されるまでをアニメーションで解説します。">
+  <title>高度化PICSのしくみ · PICS Viewer</title>
+  <link rel="stylesheet" href="styles.css?v=20261125-1">
+  <link rel="stylesheet" href="guide.css?v=20261125-1">
+  <script type="module" src="guide.mjs?v=20261125-1"></script>
+</head>
+<body>
+  <div class="shell guide-shell">
+    <header class="header guide-header">
+      <a class="brand brand-link" href="index.html"><span class="brand-mark" aria-hidden="true">↗</span><span><span class="eyebrow">PEDESTRIAN INFORMATION & COMMUNICATION SYSTEM</span><strong>PICS Viewer <small>しくみを見る</small></strong></span></a>
+      <a class="viewer-link" href="index.html">実機モニターへ</a>
+    </header>
+
+    <main>
+      <section class="guide-hero">
+        <p class="eyebrow">HOW ADVANCED PICS WORKS</p>
+        <h1>信号機の情報が、<br>画面に届くまで。</h1>
+        <p>高度化PICSは、交差点の歩行者信号情報をBLEアドバタイズとして周囲へ配信します。接続や書き込みは行わず、公開された電波を受信して表示します。</p>
+      </section>
+
+      <section class="panel flow-panel" aria-labelledby="flow-title">
+        <div class="section-heading flow-heading">
+          <div><p class="eyebrow">DATA FLOW</p><h2 id="flow-title">受信から表示まで</h2></div>
+          <button id="play-flow" class="primary" type="button">通信を再生</button>
+        </div>
+        <div id="flow" class="flow" aria-label="信号制御機から画面表示までのデータの流れ">
+          <span class="packet-dot" aria-hidden="true"></span>
+          <article class="flow-step" data-step="0">
+            <span class="step-icon" aria-hidden="true">信</span>
+            <div><strong>信号制御機</strong><span>歩行者信号の状態</span></div>
+          </article>
+          <article class="flow-step" data-step="1">
+            <span class="step-icon" aria-hidden="true">BLE</span>
+            <div><strong>アドバタイズ</strong><span>メーカーID 0x01CE</span></div>
+          </article>
+          <article class="flow-step" data-step="2">
+            <span class="step-icon" aria-hidden="true">受</span>
+            <div><strong>Web Bluetooth</strong><span>受信専用でスキャン</span></div>
+          </article>
+          <article class="flow-step" data-step="3">
+            <span class="step-icon" aria-hidden="true">解</span>
+            <div><strong>パケット解析</strong><span>Type 0 / 1 / 2</span></div>
+          </article>
+          <article class="flow-step" data-step="4">
+            <span class="step-icon" aria-hidden="true">表</span>
+            <div><strong>画面に表示</strong><span>信号状態と残り値</span></div>
+          </article>
+        </div>
+        <p id="flow-status" class="flow-status" role="status">「通信を再生」で、データが届く順番を確認できます。</p>
+      </section>
+
+      <section class="explorer-grid">
+        <div class="panel packet-explorer" aria-labelledby="packet-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">PACKET EXPLORER</p><h2 id="packet-title">3種類のメッセージ</h2></div>
+            <span class="small-tag">BLE 0x01CE</span>
+          </div>
+          <div class="type-tabs" role="tablist" aria-label="メッセージ種別">
+            <button class="type-tab" type="button" role="tab" data-type="0" aria-selected="false">Type 0 <span>交差点名</span></button>
+            <button class="type-tab" type="button" role="tab" data-type="1" aria-selected="false">Type 1 <span>位置情報</span></button>
+            <button class="type-tab is-active" type="button" role="tab" data-type="2" aria-selected="true">Type 2 <span>信号状態</span></button>
+          </div>
+          <div class="packet-visual" aria-live="polite">
+            <div class="byte-groups" id="byte-groups"></div>
+            <dl class="decoded" id="decoded"></dl>
+          </div>
+          <p class="caption">メーカーIDはブラウザAPIのキーとして渡されるため、表示するRAW DATAの先頭には含まれません。</p>
+        </div>
+
+        <div class="panel signal-demo" aria-labelledby="demo-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">SIGNAL CYCLE</p><h2 id="demo-title">受信データの見え方</h2></div>
+            <button id="play-cycle" type="button">1サイクル再生</button>
+          </div>
+          <p class="demo-crossing">DEMO CROSSING <span>交差点ID 00000001</span></p>
+          <div class="demo-signals">
+            <article class="demo-signal" data-signal="0">
+              <span class="demo-lamp" aria-hidden="true"></span>
+              <div><span class="demo-direction">信号1</span><strong class="demo-state">未受信</strong><span class="demo-remaining">残り値 —</span></div>
+            </article>
+            <article class="demo-signal" data-signal="1">
+              <span class="demo-lamp" aria-hidden="true"></span>
+              <div><span class="demo-direction">信号2</span><strong class="demo-state">未受信</strong><span class="demo-remaining">残り値 —</span></div>
+            </article>
+          </div>
+          <div class="cycle-track" role="progressbar" aria-label="デモの信号サイクル" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"><span id="cycle-progress"></span></div>
+          <p id="cycle-status" class="flow-status" role="status">実際のパーサーと同じ処理で、架空のパケットを表示します。</p>
+        </div>
+      </section>
+
+      <section class="facts" aria-label="高度化PICSの特徴">
+        <article><span>01</span><strong>受信専用</strong><p>信号機への接続・送信・操作は行いません。</p></article>
+        <article><span>02</span><strong>公開電波</strong><p>周囲へ配信されるBLEアドバタイズを受信します。</p></article>
+        <article><span>03</span><strong>端末内で解析</strong><p>受信データはブラウザ内で処理し、外部へ送信しません。</p></article>
+      </section>
+
+      <p class="safety-note">このページの信号表示は説明用の架空データです。横断時は必ず現地の信号と周囲の状況を確認してください。</p>
+    </main>
+    <footer><span>PICS Viewer</span><span><a href="https://github.com/kumi0708/ble-pics-viewer" target="_blank" rel="noreferrer">GitHub</a> · Interactive Guide</span></footer>
+  </div>
+</body>
+</html>
