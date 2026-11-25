@@ -2,122 +2,101 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#030504">
-  <meta name="description" content="高度化PICSの信号、歩行者、BLEパケットを操作できる交差点シミュレーター。">
-  <title>PICS 交差点管制表示</title>
-  <link rel="stylesheet" href="guide.css?v=20261125-4">
-  <script type="module" src="guide.mjs?v=20261125-4"></script>
+  <meta name="description" content="高度化PICSの歩行信号を、横断者の視界に重ねるAR端末シミュレーター。">
+  <title>PICS AR 横断支援端末</title>
+  <link rel="stylesheet" href="guide.css?v=20261125-5">
+  <script type="module" src="guide.mjs?v=20261125-5"></script>
 </head>
-<body>
+<body data-condition="nominal">
   <canvas id="xr-layer" aria-hidden="true"></canvas>
-  <div class="lab-shell">
-    <header class="topbar">
-      <a class="lab-brand" href="guide.html" aria-label="PICS Crossing Lab ホーム">
-        <span class="brand-pulse" aria-hidden="true"></span>
-        <span><strong>PICS</strong><small>CROSSING LAB</small></span>
+
+  <main class="ar-terminal" aria-label="PICS AR横断支援端末">
+    <div class="simulated-view" aria-hidden="true">
+      <div class="skyline skyline-left"></div>
+      <div class="skyline skyline-right"></div>
+      <div class="road-plane"></div>
+      <div class="crosswalk-plane"></div>
+      <div class="curb curb-left"></div>
+      <div class="curb curb-right"></div>
+    </div>
+
+    <div class="view-shade" aria-hidden="true"></div>
+    <div class="scan-line" aria-hidden="true"></div>
+
+    <header class="ar-header">
+      <a class="system-name" href="guide.html" aria-label="PICS AR端末を再読み込み">
+        <span class="system-mark" aria-hidden="true"></span>
+        <span><strong>PICS / AR</strong><small>PEDESTRIAN VIEW</small></span>
       </a>
-      <div class="topbar-status"><span>SIMULATION</span><b id="clock">PHASE 00</b></div>
-      <div class="topbar-actions">
-        <button id="xr-toggle" class="xr-toggle" type="button"><span>XR DISPLAY</span><small id="xr-status">CHECKING</small></button>
-        <a class="monitor-link" href="index.html">実機モニター</a>
+      <div class="link-state">
+        <span class="rx-dot" aria-hidden="true"></span>
+        <span>BLE RX</span>
+        <strong id="rx-time">--:--:--</strong>
       </div>
+      <div class="target-id"><span>TARGET</span><strong>00000001</strong></div>
     </header>
 
-    <main>
-      <div class="lab-intro">
-        <div><p>ADVANCED PICS / BLE 0x01CE</p><h1>歩行信号<br>解析管制</h1></div>
-        <p>交差点ID 00000001<br>受信専用／Type 2信号状態解析</p>
+    <div class="edge-label edge-left" aria-hidden="true">ADVANCED PICS · TYPE 02 · 0x01CE</div>
+    <div class="edge-label edge-right" aria-hidden="true">RECEIVE ONLY · DEMO DATA</div>
+
+    <section class="sight" aria-labelledby="verdict-jp">
+      <div class="reticle" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+      <button class="signal-target signal-target-one" data-signal="0" type="button" aria-label="信号1を切り替える">
+        <span class="target-leader" aria-hidden="true"></span>
+        <span class="target-box">
+          <small>SIGNAL 01</small>
+          <strong data-signal-label="0">青</strong>
+          <b data-signal-remaining="0">08</b>
+        </span>
+      </button>
+
+      <button class="signal-target signal-target-two" data-signal="1" type="button" aria-label="信号2を切り替える">
+        <span class="target-leader" aria-hidden="true"></span>
+        <span class="target-box">
+          <small>SIGNAL 02</small>
+          <strong data-signal-label="1">赤</strong>
+          <b data-signal-remaining="1">08</b>
+        </span>
+      </button>
+
+      <div class="route-guide" aria-hidden="true">
+        <span class="route-line"></span>
+        <span class="route-chevron chevron-a"></span>
+        <span class="route-chevron chevron-b"></span>
+        <span class="route-chevron chevron-c"></span>
       </div>
 
-      <div class="workspace">
-        <section class="scene" aria-labelledby="scene-title">
-          <div class="scene-header">
-            <div><span class="live-mark">SIM</span><h2 id="scene-title">DEMO CROSSING · 00000001</h2></div>
-            <span id="scene-mode">AUTO CYCLE</span>
-          </div>
-
-          <div id="intersection" class="intersection" aria-label="操作できる交差点の俯瞰図">
-            <div class="judgement" aria-live="polite"><span>PEDESTRIAN SIGNAL VERDICT</span><strong id="judgement-jp">横断許可</strong><b id="judgement-en">ROUTE S1 / WALK</b></div>
-            <div class="block block-nw"></div><div class="block block-ne"></div><div class="block block-sw"></div><div class="block block-se"></div>
-            <div class="road road-x"></div><div class="road road-y"></div>
-            <div class="lane lane-x"></div><div class="lane lane-y"></div>
-            <div class="crosswalk crosswalk-n"></div><div class="crosswalk crosswalk-e"></div><div class="crosswalk crosswalk-s"></div><div class="crosswalk crosswalk-w"></div>
-
-            <button class="map-signal signal-one" data-map-signal="0" type="button" aria-label="信号1を切り替える">
-              <span class="signal-id">S1</span><span class="signal-head" aria-hidden="true"><i class="red-lamp"></i><i class="green-lamp"></i></span><strong>青</strong>
-            </button>
-            <button class="map-signal signal-two" data-map-signal="1" type="button" aria-label="信号2を切り替える">
-              <span class="signal-id">S2</span><span class="signal-head" aria-hidden="true"><i class="red-lamp"></i><i class="green-lamp"></i></span><strong>赤</strong>
-            </button>
-
-            <span class="walker walker-x walker-a" aria-label="信号1を渡る歩行者"><i></i></span>
-            <span class="walker walker-x walker-b" aria-hidden="true"><i></i></span>
-            <span class="walker walker-y walker-c" aria-label="信号2を渡る歩行者"><i></i></span>
-
-            <div class="broadcast" aria-hidden="true"><i></i><i></i><i></i></div>
-            <div class="packet-pulse" aria-hidden="true"></div>
-
-            <div class="phone" aria-label="受信したPICS情報のスマートフォン表示">
-              <div class="phone-bar"><i></i><span>PICS</span></div>
-              <p>DEMO CROSSING</p>
-              <div class="phone-signals">
-                <div data-phone-signal="0"><i></i><span>S1</span><strong>青</strong></div>
-                <div data-phone-signal="1"><i></i><span>S2</span><strong>赤</strong></div>
-              </div>
-              <small id="phone-received">JUST NOW · BLE</small>
-            </div>
-
-            <div class="map-hint">信号をクリックして切り替え</div>
-          </div>
-
-          <div class="scene-readout" aria-live="polite">
-            <div><span>SIGNAL 1</span><strong id="readout-s1">GREEN · 8</strong></div>
-            <div><span>SIGNAL 2</span><strong id="readout-s2">RED · 8</strong></div>
-            <div><span>MODE</span><strong id="readout-mode">AUTO</strong></div>
-          </div>
-        </section>
-
-        <aside class="controller" aria-labelledby="controller-title">
-          <div class="controller-title"><span>CONTROL / 01</span><h2 id="controller-title">交差点を操作</h2></div>
-
-          <div class="phase-display"><span>現在のフェーズ</span><strong id="phase-number">00</strong><small>/ 23</small></div>
-          <label class="phase-scrubber" for="phase-control">
-            <span>時間軸をドラッグ</span>
-            <input id="phase-control" type="range" min="0" max="23" value="0">
-            <span class="phase-labels"><i>START</i><i>SWITCH</i><i>END</i></span>
-          </label>
-
-          <button id="auto-play" class="run-button" type="button" aria-pressed="false"><span class="play-icon" aria-hidden="true"></span><strong>自動再生</strong><small>信号サイクルを動かす</small></button>
-
-          <div class="quick-actions" role="group" aria-label="交差点シナリオ">
-            <button type="button" data-scene="normal"><span>01</span>通常</button>
-            <button type="button" data-scene="switch"><span>02</span>切替直前</button>
-            <button type="button" data-scene="all-red"><span>03</span>全赤</button>
-            <button type="button" data-scene="random"><span>04</span>ランダム</button>
-          </div>
-
-          <label class="remaining-slider" for="remaining-control"><span>残り値</span><output id="remaining-output" for="remaining-control">8</output><input id="remaining-control" type="range" min="1" max="8" value="8"></label>
-
-          <p class="controller-note">地図上のS1 / S2を押すと、赤 → 青 → 青点滅の順に切り替わります。</p>
-        </aside>
+      <div class="verdict" aria-live="polite">
+        <p>PEDESTRIAN SIGNAL VERDICT</p>
+        <h1 id="verdict-jp">横断許可</h1>
+        <div class="verdict-detail">
+          <strong id="verdict-en">ROUTE S1 / WALK</strong>
+          <span id="verdict-count">残り 08</span>
+        </div>
       </div>
+    </section>
 
-      <section class="packet-console" aria-labelledby="packet-title">
-        <div class="packet-heading">
-          <div><span>ADVERTISEMENT / RAW</span><h2 id="packet-title">受信パケット</h2></div>
-          <div class="packet-meta"><span>COMPANY</span><strong>0x01CE</strong><span>TYPE</span><strong>02</strong></div>
-        </div>
-        <div id="packet-bytes" class="packet-bytes" aria-label="Type 2パケットのバイト列"></div>
-        <div class="packet-footer">
-          <p id="packet-explanation" aria-live="polite">S1とS2の状態は、末尾の信号データに1バイトずつ格納されます。</p>
-          <code id="packet-hex">00 00 02 00 00 00 00 00 00 01 73 71 84 84 84 84</code>
-        </div>
-      </section>
-    </main>
+    <aside class="telemetry" aria-label="受信状態">
+      <div><span>TYPE</span><strong>02</strong></div>
+      <div><span>S1</span><strong id="s1-code">73</strong></div>
+      <div><span>S2</span><strong id="s2-code">71</strong></div>
+      <div class="phase-readout"><span>PHASE</span><strong id="phase-number">00</strong></div>
+    </aside>
 
-    <footer class="lab-footer"><span>受信専用シミュレーション · 信号機への送信や操作は行いません</span><a href="https://github.com/kumi0708/ble-pics-viewer" target="_blank" rel="noreferrer">SOURCE ON GITHUB</a></footer>
-  </div>
+    <div class="interaction-hint" id="interaction-hint">信号マーカーをタップして状態を確認</div>
+
+    <nav class="ar-controls" aria-label="AR端末操作">
+      <button id="auto-play" type="button" aria-pressed="false"><span>AUTO</span><strong>自動走査</strong></button>
+      <button id="next-state" type="button"><span>STEP</span><strong>次の状態</strong></button>
+      <button id="xr-toggle" class="xr-button" type="button" aria-pressed="false"><span>XR</span><strong>ARを起動</strong><small id="xr-status">CHECKING</small></button>
+    </nav>
+
+    <div class="safe-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  </main>
+
   <p id="xr-notice" class="xr-notice" role="status" hidden></p>
 </body>
 </html>

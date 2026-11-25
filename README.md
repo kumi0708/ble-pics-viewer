@@ -1,15 +1,47 @@
 # ble-pics-viewer
 
+<p align="center">
+  <a href="https://kumi0708.github.io/ble-pics-viewer/web/guide.html">
+    <img src="docs/assets/pics-ar-terminal.svg" alt="PICS AR横断支援端末。交差点の視界に歩行信号と横断判定を重ねて表示" width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <strong>高度化PICSの歩行信号を、横断者の視界へ。</strong><br>
+  BLEアドバタイズを解析し、進行可否・残り値・信号状態をAR端末として可視化します。
+</p>
+
+<p align="center">
+  <a href="https://kumi0708.github.io/ble-pics-viewer/web/guide.html"><strong>AR端末デモを起動</strong></a>
+  ・
+  <a href="https://kumi0708.github.io/ble-pics-viewer/web/">Web Bluetooth版</a>
+  ・
+  <a href="web/README.md">技術情報</a>
+</p>
+
 ## このフォークの追加機能
 
-このフォークでは、元リポジトリの受信・解析機能に加えて、交差点とType 2パケットを直接操作できる[交差点管制コンソール](https://kumi0708.github.io/ble-pics-viewer/web/guide.html)を追加しています。エヴァンゲリオンの劇中端末を想起させる情報設計を参考にした独自の翻案であり、公式画面・ロゴ・素材の再現ではありません。
+このフォークでは、元リポジトリの受信・解析機能に加えて、[PICS AR横断支援端末](https://kumi0708.github.io/ble-pics-viewer/web/guide.html)を追加しています。横断者がスマートフォンやグラス越しに見る視界へ用途を絞り、信号状態と進行方向をひと目で判断できる構成にしました。
 
-- 信号フェーズ、残り値、S1 / S2の状態を操作
-- 歩行者、スマートフォン表示、RAWパケットを同じ状態から更新
-- WebXR `immersive-ar` と DOM Overlay の対応端末ではAR表示を試行
-- 非対応端末では全画面XRプレビューを利用可能
+- カメラ視界を想定した全画面ARオーバーレイ
+- 「横断許可／切替注意／横断停止」を同じ信号状態から表示
+- S1 / S2マーカー、残り値、Type 2の主要バイトをリアルタイム更新
+- 信号マーカーのタップ、状態送り、自動走査に対応
+- WebXR `immersive-ar` + DOM Overlay対応端末では実景への重畳表示を試行
+- 非対応環境では同じ画面を端末プレビューとして操作可能
 
-WebXRの実機AR表示は、対応ブラウザ・対応端末・HTTPS環境が必要です。
+```mermaid
+flowchart LR
+    A[信号制御機] -->|BLE Advertisement| B[PICS Type 2解析]
+    B --> C{歩行信号判定}
+    C -->|青| D[横断許可]
+    C -->|青点滅| E[切替注意]
+    C -->|赤| F[横断停止]
+    D & E & F --> G[ARオーバーレイ]
+```
+
+> [!NOTE]
+> WebXRの実機AR表示には、対応ブラウザ・対応端末・HTTPS環境が必要です。デスクトップでは端末プレビューとして動作します。画面デザインは劇中端末の情報設計を参考にした独自の翻案であり、公式画面・ロゴ・素材は使用していません。
 
 このプログラムは、交差点の信号制御機から発信される **高度化PICS (Pedestrian Information and Communication System)** のBLEアドバタイズを受信して可視化するツールです。  BLEスキャンにより受信した信号状態（赤／青／点滅青など）をリアルタイムで表示します。
 
@@ -40,7 +72,7 @@ https://github.com/user-attachments/assets/71077409-656c-471e-b071-970c37c89461
 
 公開URL: [Web Bluetooth版を開く](https://yumu19.github.io/ble-pics-viewer/web/)
 
-高度化PICSの信号情報がBLEアドバタイズとして届き、画面に表示されるまでを確認できる[インタラクティブガイド](https://kumi0708.github.io/ble-pics-viewer/web/guide.html)も用意しています。
+高度化PICSの信号情報がBLEアドバタイズとして届き、横断判定として表示されるまでを確認できる[AR横断支援端末](https://kumi0708.github.io/ble-pics-viewer/web/guide.html)も用意しています。
 
 `web`ディレクトリに、ブラウザで動く版を用意しています。追加のライブラリやビルドは不要です。
 
