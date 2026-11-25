@@ -14,10 +14,29 @@
 <p align="center">
   <a href="https://kumi0708.github.io/ble-pics-viewer/web/guide.html"><strong>AR端末デモを起動</strong></a>
   ・
+  <a href="releases/pics-ar-v0.1.0-debug.apk"><strong>Android APK</strong></a>
+  ・
   <a href="https://kumi0708.github.io/ble-pics-viewer/web/">Web Bluetooth版</a>
   ・
   <a href="web/README.md">技術情報</a>
 </p>
+
+## Android APK
+
+[PICS AR v0.1.0 APKをダウンロード](releases/pics-ar-v0.1.0-debug.apk)
+
+<p align="center">
+  <img src="docs/assets/pics-ar-android.png" alt="Androidエミュレータ上でカメラ映像にPICS AR HUDを重ねた画面" width="100%">
+</p>
+
+Android 8.0以降を対象にしたネイティブ試作版です。CameraXの背面カメラへAR HUDを重ね、Android BLE ScannerでManufacturer ID `0x01CE`を直接受信します。WebXRやWeb Bluetoothには依存しません。
+
+- 実信号がなくても「デモ送信」で状態遷移を確認可能
+- カメラ、周辺デバイスの権限が必要
+- デバッグ署名済み。配布ストア向けのリリース署名ではありません
+- SHA-256: [`f095f33a…73580c58`](releases/pics-ar-v0.1.0-debug.apk.sha256)
+
+ソースとビルド手順は [`android-app/`](android-app/) にあります。
 
 ## このフォークの追加機能
 

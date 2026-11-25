@@ -201,6 +201,15 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Android local toolchains and generated state
+.toolchains/
+.android-sdk/
+.gradle/
+local.properties
+android-app/.idea/
+android-app/.gradle/
+android-app/app/build/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
